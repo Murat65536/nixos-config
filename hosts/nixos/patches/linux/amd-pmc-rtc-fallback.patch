@@ -1,0 +1,196 @@
+From: Local system integration <local@nixos>
+Subject: [PATCH] platform/x86: amd-pmc: preserve RTC wake without an SMU timer
+
+Some systems using the Cezanne PCI ID have an SMU firmware branch or
+version that does not implement the secondary-timer interface currently
+gated at 64.53.
+Those systems currently enter S0i3 even when an RTC wake alarm is pending,
+although the normal RTC interrupt cannot wake the SoC from S0i3. This makes
+every alarmtimer consumer, including systemd WakeSystem timers, miss its
+deadline.
+
+Use the RTC selected by alarmtimer rather than assuming rtc0. If a pending
+alarm cannot be represented by the SMU secondary timer, retain the native
+RTC alarm and omit the S0i3 OS hint for this suspend. Device suspend and
+CPU idle still run, but the SoC remains shallow enough for
+the RTC SCI to wake it. Suspends without an RTC alarm retain normal S0i3
+residency.
+
+Also use the shallow fallback for alarms outside the SMU timer's encodable
+range and keep the amd-pmc check/restore path balanced when no hint was sent.
+
+diff --git a/drivers/platform/x86/amd/pmc/pmc.c b/drivers/platform/x86/amd/pmc/pmc.c
+--- a/drivers/platform/x86/amd/pmc/pmc.c
++++ b/drivers/platform/x86/amd/pmc/pmc.c
+@@ -10,6 +10,7 @@
+ 
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
++#include <linux/alarmtimer.h>
+ #include <linux/acpi.h>
+ #include <linux/array_size.h>
+ #include <linux/bitfield.h>
+@@ -646,7 +647,8 @@
+ 	return 0;
+ }
+ 
+-static int amd_pmc_verify_czn_rtc(struct amd_pmc_dev *pdev, u32 *arg)
++static int amd_pmc_verify_czn_rtc(struct amd_pmc_dev *pdev, u32 *arg,
++				  bool *skip_s0i3)
+ {
+ 	struct rtc_device *rtc_device;
+ 	time64_t then, now, duration;
+@@ -654,17 +656,8 @@
+ 	struct rtc_time tm;
+ 	int rc;
+ 
+-	/* we haven't yet read SMU version */
+-	if (!pdev->major) {
+-		rc = amd_pmc_get_smu_version(pdev);
+-		if (rc)
+-			return rc;
+-	}
+-
+-	if (pdev->major < 64 || (pdev->major == 64 && pdev->minor < 53))
+-		return 0;
+-
+-	rtc_device = rtc_class_open("rtc0");
++	/* Follow alarmtimer's wake-capable RTC selection; rtc0 is not special. */
++	rtc_device = alarmtimer_get_rtcdev();
+ 	if (!rtc_device)
+ 		return 0;
+ 	rc = rtc_read_next_alarm(rtc_device, &alarm);
+@@ -682,20 +675,46 @@
+ 		return rc;
+ 	then = rtc_tm_to_time64(&alarm.time);
+ 	now = rtc_tm_to_time64(&tm);
+-	duration = then-now;
+ 
+-	/* in the past */
+-	if (then < now)
++	/* Do not enter S0i3 with an alarm that is already due. */
++	if (then <= now) {
++		*skip_s0i3 = true;
++		return 0;
++	}
++	duration = then - now;
++
++	/* We haven't yet read the SMU version. */
++	if (!pdev->major) {
++		rc = amd_pmc_get_smu_version(pdev);
++		if (rc)
++			return rc;
++	}
++
++	/*
++	 * Native RTC interrupts cannot wake CZN-class systems from S0i3.
++	 * Firmware 64.53 added an SMU secondary timer for that purpose.  If
++	 * this firmware branch lacks it, keep the native alarm enabled and do
++	 * not request S0i3 for this suspend.  Normal alarm-free suspend still
++	 * reaches S0i3.
++	 */
++	if (pdev->major < 64 || (pdev->major == 64 && pdev->minor < 53)) {
++		*skip_s0i3 = true;
++		pm_pr_dbg("SMU %u.%u lacks S0i3 timer wake; using shallow s2idle for %lld-second RTC alarm\n",
++			  pdev->major, pdev->minor, duration);
+ 		return 0;
++	}
+ 
+ 	/* will be stored in upper 16 bits of s0i3 hint argument,
+ 	 * so timer wakeup from s0i3 is limited to ~18 hours or less
+ 	 */
+-	if (duration <= 4 || duration > U16_MAX)
+-		return -EINVAL;
++	if (duration <= 4 || duration > U16_MAX) {
++		*skip_s0i3 = true;
++		pm_pr_dbg("RTC alarm is outside S0i3 timer range; using shallow s2idle\n");
++		return 0;
++	}
+ 
+ 	*arg |= (duration << 16);
+ 	rc = rtc_alarm_irq_enable(rtc_device, 0);
+ 	pm_pr_dbg("wakeup timer programmed for %lld seconds\n", duration);
+ 
+ 	return rc;
+@@ -770,27 +789,36 @@
+ static void amd_pmc_s2idle_prepare(void)
+ {
+ 	struct amd_pmc_dev *pdev = &pmc;
+ 	int rc;
++	bool skip_s0i3 = false;
+ 	u32 arg = 1;
+ 
+ 	/* Reset this variable because this is a fresh suspend */
+ 	pdev->is_first_check_after_suspend = true;
+ 
+-	/* Reset and Start SMU logging - to monitor the s0i3 stats */
+-	amd_pmc_setup_smu_logging(pdev);
++	pdev->skip_s0i3 = false;
+ 
+ 	/* Activate CZN specific platform bug workarounds */
+ 	if (pdev->cpu_id == AMD_CPU_ID_CZN && !disable_workarounds) {
+-		rc = amd_pmc_verify_czn_rtc(pdev, &arg);
++		rc = amd_pmc_verify_czn_rtc(pdev, &arg, &skip_s0i3);
+ 		if (rc) {
+ 			dev_err(pdev->dev, "failed to set RTC: %d\n", rc);
++			pdev->skip_s0i3 = true;
+ 			return;
+ 		}
+ 	}
+ 
++	if (skip_s0i3) {
++		pdev->skip_s0i3 = true;
++		return;
++	}
++
++	/* Reset and Start SMU logging - to monitor the s0i3 stats */
++	amd_pmc_setup_smu_logging(pdev);
++
+ 	rc = amd_pmc_send_cmd(pdev, arg, NULL, pdev->cpu_info->os_hint, false);
+ 	if (rc) {
+ 		dev_err(pdev->dev, "suspend failed: %d\n", rc);
+ 		return;
+ 	}
+ 
+@@ -804,6 +832,9 @@
+ 	struct amd_pmc_dev *pdev = &pmc;
+ 	int rc;
+ 
++	if (pdev->skip_s0i3)
++		return;
++
+ 	if (amd_pmc_intermediate_wakeup_need_delay(pdev) ||
+ 	    amd_pmc_want_suspend_delay(pdev))
+ 		msleep(2500);
+@@ -832,6 +863,11 @@
+ 	struct amd_pmc_dev *pdev = &pmc;
+ 	int rc;
+ 
++	if (pdev->skip_s0i3) {
++		pm_report_hw_sleep_time(0);
++		goto out_quirks;
++	}
++
+ 	rc = amd_pmc_send_cmd(pdev, 0, NULL, pdev->cpu_info->os_hint, false);
+ 	if (rc)
+ 		dev_err(pdev->dev, "resume failed: %d\n", rc);
+@@ -846,6 +882,8 @@
+ 	/* Notify on failed entry */
+ 	amd_pmc_validate_deepest(pdev);
+ 
++out_quirks:
++	pdev->skip_s0i3 = false;
+ 	amd_pmc_process_restore_quirks(pdev);
+ }
+ 
+diff --git a/drivers/platform/x86/amd/pmc/pmc.h b/drivers/platform/x86/amd/pmc/pmc.h
+--- a/drivers/platform/x86/amd/pmc/pmc.h
++++ b/drivers/platform/x86/amd/pmc/pmc.h
+@@ -137,6 +137,7 @@
+ 	struct quirk_entry *quirks;
+ 	bool disable_8042_wakeup;
+ 	bool is_first_check_after_suspend;
++	bool skip_s0i3;
+ 	struct amd_mp2_dev *mp2;
+ 	struct stb_arg stb_arg;
+ 	const struct amd_pmc_cpu_info *cpu_info;

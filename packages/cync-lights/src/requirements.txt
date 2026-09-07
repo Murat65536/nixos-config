@@ -1,0 +1,4 @@
+aiohttp==3.14.3
+bleak==3.0.2
+pycync==0.6.1
+pycryptodome==3.23.0

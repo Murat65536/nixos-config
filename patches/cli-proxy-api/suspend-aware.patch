@@ -1,0 +1,432 @@
+diff --git a/sdk/cliproxy/auth/auto_refresh_loop.go b/sdk/cliproxy/auth/auto_refresh_loop.go
+index b4217b3..ae8499c 100644
+--- a/sdk/cliproxy/auth/auto_refresh_loop.go
++++ b/sdk/cliproxy/auth/auto_refresh_loop.go
+@@ -120,14 +120,9 @@ func (l *authAutoRefreshLoop) rebuild(now time.Time) {
+ }
+ 
+ func (l *authAutoRefreshLoop) loop(ctx context.Context) {
+-	timer := time.NewTimer(time.Hour)
+-	if !timer.Stop() {
+-		select {
+-		case <-timer.C:
+-		default:
+-		}
+-	}
+-	defer timer.Stop()
++	timer := newRefreshDeadlineTimer(time.Hour)
++	timer.Stop()
++	defer timer.Close()
+ 
+ 	var timerCh <-chan time.Time
+ 	l.resetTimer(timer, &timerCh, time.Now())
+@@ -149,15 +144,10 @@ func (l *authAutoRefreshLoop) loop(ctx context.Context) {
+ 	}
+ }
+ 
+-func (l *authAutoRefreshLoop) resetTimer(timer *time.Timer, timerCh *<-chan time.Time, now time.Time) {
++func (l *authAutoRefreshLoop) resetTimer(timer refreshDeadlineTimer, timerCh *<-chan time.Time, now time.Time) {
+ 	next, ok := l.peek()
+ 	if !ok {
+-		if !timer.Stop() {
+-			select {
+-			case <-timer.C:
+-			default:
+-			}
+-		}
++		timer.Stop()
+ 		*timerCh = nil
+ 		return
+ 	}
+@@ -166,14 +156,8 @@ func (l *authAutoRefreshLoop) resetTimer(timer *time.Timer, timerCh *<-chan time
+ 	if wait < 0 {
+ 		wait = 0
+ 	}
+-	if !timer.Stop() {
+-		select {
+-		case <-timer.C:
+-		default:
+-		}
+-	}
+ 	timer.Reset(wait)
+-	*timerCh = timer.C
++	*timerCh = timer.Chan()
+ }
+ 
+ func (l *authAutoRefreshLoop) peek() (time.Time, bool) {
+diff --git a/sdk/cliproxy/auth/conductor_scheduler_refresh_test.go b/sdk/cliproxy/auth/conductor_scheduler_refresh_test.go
+index 9e049f4..7863161 100644
+--- a/sdk/cliproxy/auth/conductor_scheduler_refresh_test.go
++++ b/sdk/cliproxy/auth/conductor_scheduler_refresh_test.go
+@@ -350,7 +350,7 @@ func TestManager_RefreshAuthTransientFailure_ExpiredTokenMarkedUnavailableWithRe
+ 	}
+ }
+ 
+-func TestManager_RefreshAuth_ExpiredAccessTokenBlockedFromSelection(t *testing.T) {
++func TestManager_RefreshAuth_ExpiredAccessTokenWithoutRefreshCredentialBlockedFromSelection(t *testing.T) {
+ 	pastExpiry := time.Now().Add(-1 * time.Hour)
+ 	auth := &Auth{
+ 		ID:       "expired-token-blocked",
+@@ -370,6 +370,46 @@ func TestManager_RefreshAuth_ExpiredAccessTokenBlockedFromSelection(t *testing.T
+ 	_ = reason
+ }
+ 
++func TestManager_RefreshAuth_ExpiredAccessTokenWithRefreshCredentialRemainsSelectable(t *testing.T) {
++	pastExpiry := time.Now().Add(-1 * time.Hour)
++	auth := &Auth{
++		ID:       "expired-token-refreshable",
++		Provider: "codex",
++		Status:   StatusActive,
++		Metadata: map[string]any{
++			"email":         "user@example.com",
++			"access_token":  "expired-token",
++			"refresh_token": "refresh-token",
++			"expired":       pastExpiry.Format(time.RFC3339),
++		},
++	}
++
++	blocked, reason, next := isAuthBlockedForModel(auth, "gpt-5", time.Now())
++	if blocked || reason != blockReasonNone || !next.IsZero() {
++		t.Fatalf("isAuthBlockedForModel() = %v, %v, %v; want false, none, zero", blocked, reason, next)
++	}
++}
++
++func TestManager_RefreshAuth_ExpiredRefreshableTokenStillRespectsUnavailableState(t *testing.T) {
++	pastExpiry := time.Now().Add(-1 * time.Hour)
++	auth := &Auth{
++		ID:          "expired-token-unavailable",
++		Provider:    "codex",
++		Status:      StatusError,
++		Unavailable: true,
++		Metadata: map[string]any{
++			"access_token":  "expired-token",
++			"refresh_token": "refresh-token",
++			"expired":       pastExpiry.Format(time.RFC3339),
++		},
++	}
++
++	blocked, _, _ := isAuthBlockedForModel(auth, "gpt-5", time.Now())
++	if !blocked {
++		t.Fatal("isAuthBlockedForModel should preserve an explicit unavailable state")
++	}
++}
++
+ type blockingRefreshTestExecutor struct {
+ 	schedulerProviderTestExecutor
+ 	started chan struct{}
+diff --git a/sdk/cliproxy/auth/conductor_unauthorized_refresh_test.go b/sdk/cliproxy/auth/conductor_unauthorized_refresh_test.go
+index 3745192..0823d75 100644
+--- a/sdk/cliproxy/auth/conductor_unauthorized_refresh_test.go
++++ b/sdk/cliproxy/auth/conductor_unauthorized_refresh_test.go
+@@ -5,6 +5,7 @@ import (
+ 	"net/http"
+ 	"sync"
+ 	"testing"
++	"time"
+ 
+ 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
+ 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
+@@ -22,6 +23,48 @@ type unauthorizedRefreshExecutor struct {
+ 	refreshTokens map[string]string
+ }
+ 
++func TestManager_Execute_ExpiredOAuthRefreshesOnFirstRequest(t *testing.T) {
++	model := "gpt-5.5"
++	auth := &Auth{
++		ID:       "expired-oauth",
++		Provider: "codex",
++		Metadata: map[string]any{
++			"access_token":  "expired-access-token",
++			"refresh_token": "refresh-token",
++			"expired":       time.Now().Add(-time.Hour).Format(time.RFC3339),
++		},
++	}
++	executor := &unauthorizedRefreshExecutor{
++		id: "codex",
++		tokenInvalid: map[string]struct{}{
++			"expired-access-token": {},
++		},
++		refreshTokens: map[string]string{
++			auth.ID: "fresh-access-token",
++		},
++	}
++	m := NewManager(nil, nil, nil)
++	m.RegisterExecutor(executor)
++
++	reg := registry.GetGlobalRegistry()
++	reg.RegisterClient(auth.ID, "codex", []*registry.ModelInfo{{ID: model}})
++	t.Cleanup(func() { reg.UnregisterClient(auth.ID) })
++	if _, errRegister := m.Register(context.Background(), auth); errRegister != nil {
++		t.Fatalf("register auth: %v", errRegister)
++	}
++
++	resp, errExecute := m.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
++	if errExecute != nil {
++		t.Fatalf("Execute error = %v, want refresh recovery", errExecute)
++	}
++	if got := string(resp.Payload); got != auth.ID+":fresh-access-token" {
++		t.Fatalf("payload = %q, want refreshed response", got)
++	}
++	if got := executor.RefreshCalls(); got != 1 {
++		t.Fatalf("Refresh calls = %d, want 1", got)
++	}
++}
++
+ func (e *unauthorizedRefreshExecutor) Identifier() string { return e.id }
+ 
+ func (e *unauthorizedRefreshExecutor) Execute(_ context.Context, auth *Auth, _ cliproxyexecutor.Request, _ cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+diff --git a/sdk/cliproxy/auth/refresh_deadline_timer.go b/sdk/cliproxy/auth/refresh_deadline_timer.go
+new file mode 100644
+index 0000000..3786dba
+--- /dev/null
++++ b/sdk/cliproxy/auth/refresh_deadline_timer.go
+@@ -0,0 +1,48 @@
++package auth
++
++import "time"
++
++// refreshDeadlineTimer fires after wall-clock elapsed time. On platforms with
++// a suspend-aware clock, the implementation includes time spent suspended.
++// It intentionally does not wake a suspended host.
++type refreshDeadlineTimer interface {
++	Chan() <-chan time.Time
++	Reset(time.Duration)
++	Stop()
++	Close()
++}
++
++type goRefreshDeadlineTimer struct {
++	timer *time.Timer
++}
++
++func newGoRefreshDeadlineTimer(d time.Duration) refreshDeadlineTimer {
++	return &goRefreshDeadlineTimer{timer: time.NewTimer(d)}
++}
++
++func (t *goRefreshDeadlineTimer) Chan() <-chan time.Time {
++	return t.timer.C
++}
++
++func (t *goRefreshDeadlineTimer) Reset(d time.Duration) {
++	if !t.timer.Stop() {
++		select {
++		case <-t.timer.C:
++		default:
++		}
++	}
++	t.timer.Reset(d)
++}
++
++func (t *goRefreshDeadlineTimer) Stop() {
++	if !t.timer.Stop() {
++		select {
++		case <-t.timer.C:
++		default:
++		}
++	}
++}
++
++func (t *goRefreshDeadlineTimer) Close() {
++	t.Stop()
++}
+diff --git a/sdk/cliproxy/auth/refresh_deadline_timer_linux.go b/sdk/cliproxy/auth/refresh_deadline_timer_linux.go
+new file mode 100644
+index 0000000..056bf47
+--- /dev/null
++++ b/sdk/cliproxy/auth/refresh_deadline_timer_linux.go
+@@ -0,0 +1,107 @@
++//go:build linux
++
++package auth
++
++import (
++	"encoding/binary"
++	"sync"
++	"time"
++
++	"golang.org/x/sys/unix"
++)
++
++// linuxBootTimeTimer uses CLOCK_BOOTTIME so a deadline that passes during
++// suspend becomes readable immediately after resume. CLOCK_BOOTTIME (unlike
++// CLOCK_BOOTTIME_ALARM) does not wake the host and needs no special capability.
++type linuxBootTimeTimer struct {
++	timerFD int
++	closeFD int
++	c       chan time.Time
++	done    chan struct{}
++	once    sync.Once
++}
++
++func newRefreshDeadlineTimer(d time.Duration) refreshDeadlineTimer {
++	timerFD, err := unix.TimerfdCreate(unix.CLOCK_BOOTTIME, unix.TFD_CLOEXEC|unix.TFD_NONBLOCK)
++	if err != nil {
++		return newGoRefreshDeadlineTimer(d)
++	}
++	closeFD, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
++	if err != nil {
++		_ = unix.Close(timerFD)
++		return newGoRefreshDeadlineTimer(d)
++	}
++
++	t := &linuxBootTimeTimer{
++		timerFD: timerFD,
++		closeFD: closeFD,
++		c:       make(chan time.Time, 1),
++		done:    make(chan struct{}),
++	}
++	t.Reset(d)
++	go t.run()
++	return t
++}
++
++func (t *linuxBootTimeTimer) Chan() <-chan time.Time {
++	return t.c
++}
++
++func (t *linuxBootTimeTimer) Reset(d time.Duration) {
++	if d <= 0 {
++		// A zero timerfd value disarms the timer, unlike time.Timer.Reset(0).
++		d = time.Nanosecond
++	}
++	spec := &unix.ItimerSpec{Value: unix.NsecToTimespec(d.Nanoseconds())}
++	_ = unix.TimerfdSettime(t.timerFD, 0, spec, nil)
++}
++
++func (t *linuxBootTimeTimer) Stop() {
++	_ = unix.TimerfdSettime(t.timerFD, 0, &unix.ItimerSpec{}, nil)
++}
++
++func (t *linuxBootTimeTimer) Close() {
++	t.once.Do(func() {
++		var wake [8]byte
++		binary.NativeEndian.PutUint64(wake[:], 1)
++		_, _ = unix.Write(t.closeFD, wake[:])
++		<-t.done
++	})
++}
++
++func (t *linuxBootTimeTimer) run() {
++	defer close(t.done)
++	defer unix.Close(t.timerFD)
++	defer unix.Close(t.closeFD)
++
++	pollFDs := []unix.PollFd{
++		{Fd: int32(t.timerFD), Events: unix.POLLIN},
++		{Fd: int32(t.closeFD), Events: unix.POLLIN},
++	}
++	var value [8]byte
++	for {
++		_, err := unix.Poll(pollFDs, -1)
++		if err == unix.EINTR {
++			continue
++		}
++		if err != nil {
++			return
++		}
++		if pollFDs[1].Revents != 0 {
++			return
++		}
++		if pollFDs[0].Revents&unix.POLLIN == 0 {
++			if pollFDs[0].Revents != 0 {
++				return
++			}
++			continue
++		}
++		if _, err = unix.Read(t.timerFD, value[:]); err != nil && err != unix.EAGAIN {
++			return
++		}
++		select {
++		case t.c <- time.Now():
++		default:
++		}
++	}
++}
+diff --git a/sdk/cliproxy/auth/refresh_deadline_timer_linux_test.go b/sdk/cliproxy/auth/refresh_deadline_timer_linux_test.go
+new file mode 100644
+index 0000000..8a8d1bb
+--- /dev/null
++++ b/sdk/cliproxy/auth/refresh_deadline_timer_linux_test.go
+@@ -0,0 +1,16 @@
++//go:build linux
++
++package auth
++
++import (
++	"testing"
++	"time"
++)
++
++func TestRefreshDeadlineTimerUsesBootTimeOnLinux(t *testing.T) {
++	timer := newRefreshDeadlineTimer(time.Hour)
++	defer timer.Close()
++	if _, ok := timer.(*linuxBootTimeTimer); !ok {
++		t.Fatalf("newRefreshDeadlineTimer() = %T, want CLOCK_BOOTTIME implementation", timer)
++	}
++}
+diff --git a/sdk/cliproxy/auth/refresh_deadline_timer_other.go b/sdk/cliproxy/auth/refresh_deadline_timer_other.go
+new file mode 100644
+index 0000000..f37d463
+--- /dev/null
++++ b/sdk/cliproxy/auth/refresh_deadline_timer_other.go
+@@ -0,0 +1,9 @@
++//go:build !linux
++
++package auth
++
++import "time"
++
++func newRefreshDeadlineTimer(d time.Duration) refreshDeadlineTimer {
++	return newGoRefreshDeadlineTimer(d)
++}
+diff --git a/sdk/cliproxy/auth/refresh_deadline_timer_test.go b/sdk/cliproxy/auth/refresh_deadline_timer_test.go
+new file mode 100644
+index 0000000..d1098b8
+--- /dev/null
++++ b/sdk/cliproxy/auth/refresh_deadline_timer_test.go
+@@ -0,0 +1,27 @@
++package auth
++
++import (
++	"testing"
++	"time"
++)
++
++func TestRefreshDeadlineTimerResetAndStop(t *testing.T) {
++	timer := newRefreshDeadlineTimer(time.Hour)
++	defer timer.Close()
++
++	timer.Stop()
++	timer.Reset(10 * time.Millisecond)
++	select {
++	case <-timer.Chan():
++	case <-time.After(time.Second):
++		t.Fatal("refresh deadline timer did not fire after reset")
++	}
++
++	timer.Reset(100 * time.Millisecond)
++	timer.Stop()
++	select {
++	case <-timer.Chan():
++		t.Fatal("refresh deadline timer fired after stop")
++	case <-time.After(25 * time.Millisecond):
++	}
++}
+diff --git a/sdk/cliproxy/auth/selector.go b/sdk/cliproxy/auth/selector.go
+index 75a3f22..1e9a4d8 100644
+--- a/sdk/cliproxy/auth/selector.go
++++ b/sdk/cliproxy/auth/selector.go
+@@ -802,7 +802,11 @@ func isAuthBlockedForModel(auth *Auth, model string, now time.Time) (bool, block
+ 	if auth.Disabled || auth.Status == StatusDisabled {
+ 		return true, blockReasonDisabled, time.Time{}
+ 	}
+-	if exp, ok := auth.AccessTokenExpirationTime(); ok && !exp.IsZero() && !exp.After(now) {
++	// Keep expired OAuth credentials selectable when they can be refreshed.
++	// The executor/manager request path performs a serialized refresh (or a
++	// refresh-and-retry after a 401). This is also the recovery path when a
++	// proactive refresh deadline was missed while the host was suspended.
++	if exp, ok := auth.AccessTokenExpirationTime(); ok && !exp.IsZero() && !exp.After(now) && !authHasRefreshCredential(auth) {
+ 		return true, blockReasonOther, time.Time{}
+ 	}
+ 	if auth.Quota.Exceeded && auth.Quota.Reason == "credential_quota" && auth.Quota.NextRecoverAt.After(now) {
+
