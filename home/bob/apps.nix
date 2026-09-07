@@ -19,5 +19,6 @@
     vlc
     vscode
     xwayland-satellite
+    freecad
   ];
 }
