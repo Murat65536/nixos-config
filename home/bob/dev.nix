@@ -1,6 +1,11 @@
 { pkgs, lib, ... }:
 
 {
+  programs.gh = {
+    enable = true;
+    gitCredentialHelper.enable = true;
+  };
+
   home.packages = with pkgs; [
     # Compilers & toolchains
     (lib.setPrio 20 clang)
