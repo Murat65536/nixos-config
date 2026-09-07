@@ -14,14 +14,18 @@ let
   hermesAgent = inputs.hermes-agent.packages.${system}.default;
 
   equibopWithoutVaapiEncoder = pkgs.equibop.overrideAttrs (old: {
-    postFixup = (old.postFixup or "") + ''
-      wrapProgram $out/bin/equibop \
-        --add-flags "--disable-features=VaapiVideoEncoder"
-    '';
+    postFixup =
+      (old.postFixup or "")
+      + ''
+        wrapProgram $out/bin/equibop \
+          --add-flags "--disable-features=VaapiVideoEncoder"
+      '';
   });
 in
 {
   imports = [
+    ./apps.nix
+    ./dev.nix
     ./fish.nix
     ./kitty.nix
     ./services.nix
@@ -33,49 +37,25 @@ in
     stateVersion = "26.05";
     sessionPath = [ "$HOME/.local/bin" ];
 
+    # Core CLI tools & background utilities
     packages =
       (with pkgs; [
-        anki
         btop
-        chromium
-        (lib.setPrio 20 clang)
-        clang-tools
-        claude-code
-        codex
         ddcutil
         fastfetch
         fd
         fuzzel
         fzf
-        gcc
-        haskell-language-server
         kitty
-        lua-language-server
         neovim
-        nodejs
-        obs-studio
-        obsidian
-        papirus-icon-theme
-        python3
         ripgrep
-        rustup
-        sioyek
-        slack
-        typescript-language-server
         unzip
-        vlc
-        vscode
-        wgsl-analyzer
-        xwayland-satellite
         zip
-        zls
       ])
       ++ [
         cliProxyApi
         cyncLights
-        equibopWithoutVaapiEncoder
         hermesAgent
-        hermesAgent.hermesDesktop
       ];
   };
 
@@ -83,6 +63,11 @@ in
   xdg.enable = true;
 
   _module.args = {
-    inherit cliProxyApi cyncLights;
+    inherit
+      cliProxyApi
+      cyncLights
+      hermesAgent
+      equibopWithoutVaapiEncoder
+      ;
   };
 }

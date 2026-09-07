@@ -47,8 +47,7 @@
     # Prevent attached USB mice from causing closed-lid wakeups.
     ACTION=="add", SUBSYSTEM=="usb", ENV{ID_USB_INTERFACES}=="*:030102:*", TEST=="power/wakeup", ATTR{power/wakeup}="disabled"
 
-    # This Texas Instruments USB device needs direct access. Restrict access
-    # to the active local seat instead of making every matching device 0666.
-    SUBSYSTEM=="usb", ATTR{idVendor}=="0451", TAG+="uaccess"
+    # Texas Instruments TI-84 Plus CE direct user access for CEmu/TI Connect.
+    SUBSYSTEM=="usb", ATTR{idVendor}=="0451", ATTR{idProduct}=="e008", TAG+="uaccess"
   '';
 }
