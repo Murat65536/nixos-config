@@ -30,7 +30,19 @@
   };
 
   programs.fish.enable = true;
-  programs.nix-ld.enable = true;
+  programs.nix-ld = {
+    enable = true;
+    libraries = with pkgs; [
+      vulkan-loader
+      libGL
+      wayland
+      libxkbcommon
+      libx11
+      libxcursor
+      libxi
+      libxrandr
+    ];
+  };
 
   nixpkgs.config.allowUnfree = true;
   nix.settings.experimental-features = [

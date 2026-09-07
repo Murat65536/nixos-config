@@ -42,6 +42,10 @@
   programs.dconf.enable = true;
   security.polkit.enable = true;
 
+  fonts.packages = with pkgs; [
+    nerd-fonts.jetbrains-mono
+  ];
+
   services = {
     flatpak.enable = true;
     cloudflare-warp.enable = true;

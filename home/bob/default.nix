@@ -14,12 +14,10 @@ let
   hermesAgent = inputs.hermes-agent.packages.${system}.default;
 
   equibopWithoutVaapiEncoder = pkgs.equibop.overrideAttrs (old: {
-    postFixup =
-      (old.postFixup or "")
-      + ''
-        wrapProgram $out/bin/equibop \
-          --add-flags "--disable-features=VaapiVideoEncoder"
-      '';
+    postFixup = (old.postFixup or "") + ''
+      wrapProgram $out/bin/equibop \
+        --add-flags "--disable-features=VaapiVideoEncoder"
+    '';
   });
 in
 {

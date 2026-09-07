@@ -10,10 +10,13 @@
     # Compilers & toolchains
     (lib.setPrio 20 clang)
     clang-tools
+    cmake
     gcc
+    gnumake
     nodejs
     python3
     rustup
+    zig
 
     # Language servers
     haskell-language-server
@@ -21,5 +24,9 @@
     typescript-language-server
     wgsl-analyzer
     zls
+
+    # Formatters & linters
+    prettierd
+    stylua
   ];
 }
