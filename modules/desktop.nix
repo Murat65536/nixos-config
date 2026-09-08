@@ -85,4 +85,12 @@
     enableAudioWavelength = true;
     enableCalendarEvents = true;
   };
+
+  systemd.user.services.dms.environment = {
+    QS_ICON_THEME = "Papirus";
+  };
+
+  environment.sessionVariables = {
+    QS_ICON_THEME = "Papirus";
+  };
 }
