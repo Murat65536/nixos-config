@@ -26,6 +26,8 @@
     })
     xwayland-satellite
     freecad
+    ffmpeg
+    yt-dlp
 
     # FRC tools
     advantagescope
