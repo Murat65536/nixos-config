@@ -17,7 +17,12 @@
     sioyek
     slack
     vlc
-    vscode
+    (vscode-with-extensions.override {
+      vscode = vscode;
+      vscodeExtensions = [
+        vscode-extensions.wpilibsuite.vscode-wpilib
+      ];
+    })
     xwayland-satellite
     freecad
 
