@@ -35,6 +35,15 @@ in
     stateVersion = "26.05";
     sessionPath = [ "$HOME/.local/bin" ];
 
+    sessionVariables = {
+      JAVA_HOME = "${pkgs.temurin-bin-17}";
+    };
+
+    file = {
+      "wpilib/2026/jdk".source = pkgs.temurin-bin-17;
+      ".local/share/java/jdk21".source = pkgs.jdk21;
+    };
+
     # Core CLI tools & background utilities
     packages =
       (with pkgs; [

@@ -21,6 +21,7 @@
       vscode = vscode;
       vscodeExtensions = [
         vscode-extensions.wpilibsuite.vscode-wpilib
+        vscode-extensions.redhat.java
       ];
     })
     xwayland-satellite

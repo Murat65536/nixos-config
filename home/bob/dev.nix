@@ -16,6 +16,7 @@
     nodejs
     python3
     rustup
+    temurin-bin-17
     zig
 
     # Language servers
