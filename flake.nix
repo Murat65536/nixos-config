@@ -13,6 +13,11 @@
 
     hermes-agent.url = "github:NousResearch/hermes-agent";
 
+    frc-nix = {
+      url = "github:frc4451/frc-nix/season/2026";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Keep this exact packaging revision until the local suspend-aware patch
     # is either upstream or deliberately rebased.
     llm-agents.url = "github:numtide/llm-agents.nix/496d8f2d508dcd4673a1480cd58b3e9bf3400c15";

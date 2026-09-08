@@ -1,4 +1,4 @@
-{ ... }:
+{ inputs, ... }:
 
 {
   imports = [
@@ -9,6 +9,10 @@
     ../../modules/home-manager.nix
     ../../modules/maintenance.nix
     ../../modules/services/cync-lights.nix
+  ];
+
+  nixpkgs.overlays = [
+    inputs.frc-nix.overlays.default
   ];
 
   networking.hostName = "nixos";
