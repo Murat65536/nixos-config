@@ -28,6 +28,7 @@
     freecad
     ffmpeg
     yt-dlp
+    localsend
 
     # FRC tools
     advantagescope

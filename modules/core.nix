@@ -10,6 +10,10 @@
   };
 
   networking.networkmanager.enable = true;
+  networking.firewall = {
+    allowedTCPPorts = [ 53317 ];
+    allowedUDPPorts = [ 53317 ];
+  };
   time.timeZone = "America/New_York";
   i18n.defaultLocale = "en_US.UTF-8";
 
