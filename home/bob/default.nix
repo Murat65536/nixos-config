@@ -37,6 +37,7 @@ in
 
     sessionVariables = {
       JAVA_HOME = "${pkgs.temurin-bin-17}";
+      CUA_DRIVER_RS_ENABLE_WAYLAND = "1";
     };
 
     file = {
