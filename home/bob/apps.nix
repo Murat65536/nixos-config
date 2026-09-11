@@ -16,7 +16,6 @@
     papirus-icon-theme
     sioyek
     slack
-    ticktick
     vlc
     (vscode-with-extensions.override {
       vscode = vscode;
