@@ -18,6 +18,7 @@
     rustup
     temurin-bin-17
     zig
+    typst
 
     # Language servers
     haskell-language-server

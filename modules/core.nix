@@ -27,6 +27,7 @@
     isNormalUser = true;
     description = "Bob";
     extraGroups = [
+      "input"
       "networkmanager"
       "wheel"
     ];
@@ -58,6 +59,7 @@
 
   environment.systemPackages = with pkgs; [
     git
+    valgrind
     vim
     wget
   ];

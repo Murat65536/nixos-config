@@ -38,10 +38,16 @@ let
         --description="Wake suspended laptop for Cync room lights" \
         --on-calendar="$calendar" \
         --timer-property=WakeSystem=true \
+        --timer-property=AccuracySec=1s \
         --property=Type=oneshot \
-        ${pkgs.curl}/bin/curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
-          -X POST -H 'Content-Type: application/json' \
-          -d '{"action":"wake_if_due"}' http://127.0.0.1:8765/api/power
+        ${pkgs.systemd}/bin/systemd-inhibit \
+          --what=sleep:idle:handle-lid-switch \
+          --who="cync-lights-wake" \
+          --why="Turn on Cync room lights before laptop re-suspends" \
+          --mode=block \
+          ${pkgs.curl}/bin/curl -fsS --retry 6 --retry-delay 5 --retry-connrefused \
+            -X POST -H 'Content-Type: application/json' \
+            -d '{"action":"wake_if_due"}' http://127.0.0.1:8765/api/power
 
       ${pkgs.systemd}/bin/systemctl is-active --quiet "$unit.timer"
       printf '%s\n' "$wake_at" > "$ack_tmp"

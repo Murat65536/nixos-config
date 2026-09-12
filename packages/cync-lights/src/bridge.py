@@ -240,7 +240,8 @@ class RoomLights:
     async def close(self):
         self._cancel_wake_task()
         for transport, _bulbs in self.targets:
-            await transport.disconnect()
+            with suppress(Exception):
+                await transport.disconnect()
 
 
 @web.middleware
@@ -318,13 +319,18 @@ async def run():
     restore_task = asyncio.create_task(restore_desired_state())
 
     async def reconnect_when_available():
+        backoff = 30
         while True:
-            await asyncio.sleep(30)
+            await asyncio.sleep(backoff)
             if lights.current.lights_on and lights.current.kelvin is not None and not lights.online:
                 try:
                     await lights.sync(lights.current.kelvin)
+                    backoff = 30
                 except CyncBluetoothError as error:
                     print(f"Bluetooth reconnect retry: {error}", flush=True)
+                    backoff = min(backoff * 2, 300)
+            else:
+                backoff = 30
 
     reconnect_task = asyncio.create_task(reconnect_when_available())
     try:
@@ -335,7 +341,8 @@ async def run():
             with suppress(asyncio.CancelledError, CyncBluetoothError):
                 await task
         await runner.cleanup()
-        await lights.close()
+        with suppress(Exception):
+            await lights.close()
 
 
 if __name__ == "__main__":

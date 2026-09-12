@@ -14,7 +14,15 @@
     obs-studio
     obsidian
     papirus-icon-theme
-    sioyek
+    (symlinkJoin {
+      name = "sioyek";
+      paths = [ sioyek ];
+      nativeBuildInputs = [ makeWrapper ];
+      postBuild = ''
+        wrapProgram $out/bin/sioyek \
+          --prefix XDG_DATA_DIRS : "${gtk3}/share/gsettings-schemas/${gtk3.name}:${gsettings-desktop-schemas}/share/gsettings-schemas/${gsettings-desktop-schemas.name}"
+      '';
+    })
     slack
     vlc
     (vscode-with-extensions.override {

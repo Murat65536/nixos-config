@@ -82,10 +82,13 @@ class CyncBluetoothMesh:
         self.session_key = None
         self.mac_data = None
 
-    async def discover(self, timeout=8):
+    async def discover(self, timeout=3):
         expected = {mac.replace(":", "") for mac in self.bulb_macs}
-        devices = await BleakScanner.discover(timeout=timeout)
-        return [device for device in devices if device.address.replace(":", "").upper() in expected]
+        device = await BleakScanner.find_device_by_filter(
+            lambda d, adv: d.address.replace(":", "").upper() in expected,
+            timeout=timeout,
+        )
+        return [device] if device else []
 
     async def connect(self):
         if self.connected:
@@ -175,4 +178,7 @@ class CyncBluetoothMesh:
         self.session_key = None
         self.mac_data = None
         if client and client.is_connected:
-            await client.disconnect()
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
