@@ -30,6 +30,7 @@
     ffmpeg
     yt-dlp
     localsend
+    cursor-cli
 
     # FRC tools
     advantagescope

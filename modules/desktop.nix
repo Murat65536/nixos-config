@@ -28,13 +28,9 @@
   services.greetd = {
     enable = true;
     settings = {
-      initial_session = {
-        command = "${config.programs.niri.package}/bin/niri-session";
-        user = "bob";
-      };
       default_session = {
-        command = "${config.programs.niri.package}/bin/niri-session";
-        user = "bob";
+        command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --asterisks --cmd ${config.programs.niri.package}/bin/niri-session";
+        user = "greeter";
       };
     };
   };
