@@ -49,6 +49,11 @@
     gvfs.enable = true;
     udisks2.enable = true;
     tumbler.enable = true;
+    printing.enable = true;
+    avahi = {
+      enable = true;
+      nssmdns4 = true;
+    };
   };
 
   programs.thunar = {
