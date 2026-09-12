@@ -25,13 +25,6 @@
     })
     slack
     vlc
-    (vscode-with-extensions.override {
-      vscode = vscode;
-      vscodeExtensions = [
-        vscode-extensions.wpilibsuite.vscode-wpilib
-        vscode-extensions.redhat.java
-      ];
-    })
     xwayland-satellite
     freecad
     ffmpeg
@@ -55,4 +48,13 @@
     wpilib.wpical
     wpilib.wpilib-utility
   ];
+
+  programs.vscode = {
+    enable = true;
+    mutableExtensionsDir = true;
+    profiles.default.extensions = with pkgs.vscode-extensions; [
+      wpilibsuite.vscode-wpilib
+      redhat.java
+    ];
+  };
 }
