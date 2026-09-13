@@ -32,6 +32,18 @@
     localsend
     cursor-cli
     qwen-code
+    (symlinkJoin {
+      name = "en-croissant";
+      paths = [ en-croissant ];
+      nativeBuildInputs = [ makeWrapper ];
+      postBuild = ''
+        wrapProgram $out/bin/en-croissant \
+          --prefix GIO_EXTRA_MODULES : "${glib-networking}/lib/gio/modules"
+      '';
+    })
+    lc0
+    taskwarrior3
+    vit
 
     # FRC tools
     advantagescope
