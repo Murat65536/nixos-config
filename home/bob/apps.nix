@@ -43,7 +43,7 @@
     })
     lc0
     taskwarrior3
-    vit
+    taskwarrior-tui
 
     # FRC tools
     advantagescope
