@@ -10,6 +10,10 @@
         mv = "mv -i";
         rm = "rm -i";
 
+        # Taskwarrior / VIT dynamic theme sync
+        task = "~/.local/bin/sync-task-theme.py; task";
+        vit = "~/.local/bin/sync-task-theme.py; vit";
+
         # Nix convenience
         nrs = "run0 nixos-rebuild switch";
         nrt = "run0 nixos-rebuild test";
