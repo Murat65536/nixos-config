@@ -31,6 +31,7 @@
     yt-dlp
     localsend
     cursor-cli
+    qwen-code
 
     # FRC tools
     advantagescope
