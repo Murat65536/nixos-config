@@ -54,6 +54,10 @@
       enable = true;
       nssmdns4 = true;
     };
+    logind.settings.Login = {
+      HandleLidSwitch = "ignore";
+      HandleLidSwitchExternalPower = "ignore";
+    };
   };
 
   programs.thunar = {
