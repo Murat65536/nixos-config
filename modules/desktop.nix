@@ -44,6 +44,7 @@
   ];
 
   services = {
+    upower.enable = true;
     flatpak.enable = true;
     cloudflare-warp.enable = true;
     gvfs.enable = true;

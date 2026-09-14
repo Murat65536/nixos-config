@@ -29,6 +29,7 @@
     xwayland-satellite
     freecad
     ffmpeg
+    imagemagick
     yt-dlp
     localsend
     cursor-cli

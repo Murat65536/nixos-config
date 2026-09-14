@@ -28,7 +28,7 @@ Mesh credentials are stored with mode `0600` in
 
 ```console
 nix build .#checks.x86_64-linux.cync-lights
-curl -fsS http://127.0.0.1:8765/api/status
+curl -fsS http://127.0.0.1:8760/api/status
 systemctl --user status cync-lights.service
 ```
 

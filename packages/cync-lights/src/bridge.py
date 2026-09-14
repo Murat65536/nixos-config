@@ -3,6 +3,7 @@
 import asyncio
 import json
 import math
+import os
 import signal
 from contextlib import suppress
 from datetime import datetime
@@ -23,7 +24,7 @@ from state import (
 
 
 HOST = "127.0.0.1"
-PORT = 8765
+PORT = int(os.getenv("CYNC_PORT", "8760"))
 WARM_KELVIN = 2000
 COOL_KELVIN = 6500
 WAKE_ACK_FILE = Path("/run/cync-lights-wake.ack")
