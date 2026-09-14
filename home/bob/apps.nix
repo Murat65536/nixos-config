@@ -2,6 +2,7 @@
   pkgs,
   equibopWithoutVaapiEncoder,
   hermesAgent,
+  lightpanda,
   ...
 }:
 
@@ -32,6 +33,7 @@
     localsend
     cursor-cli
     qwen-code
+    lightpanda
     (symlinkJoin {
       name = "en-croissant";
       paths = [ en-croissant ];

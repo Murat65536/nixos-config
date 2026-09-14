@@ -12,6 +12,7 @@ let
   };
   cyncLights = pkgs.callPackage ../../packages/cync-lights { };
   hermesAgent = inputs.hermes-agent.packages.${system}.default;
+  lightpanda = pkgs.callPackage ../../packages/lightpanda.nix { };
 
   equibopWithoutVaapiEncoder = pkgs.equibop.overrideAttrs (old: {
     postFixup = (old.postFixup or "") + ''
@@ -76,6 +77,7 @@ in
       cyncLights
       hermesAgent
       equibopWithoutVaapiEncoder
+      lightpanda
       ;
   };
 }

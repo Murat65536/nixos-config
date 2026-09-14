@@ -39,11 +39,13 @@
         inherit pkgs;
         llmAgents = inputs.llm-agents;
       };
+      lightpanda = pkgs.callPackage ./packages/lightpanda.nix { };
     in
     {
       packages.${system} = {
         cync-lights = cyncLights;
         cli-proxy-api = cliProxyApi;
+        lightpanda = lightpanda;
         default = cyncLights;
       };
 
